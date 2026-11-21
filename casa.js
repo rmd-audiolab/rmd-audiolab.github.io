@@ -146,10 +146,18 @@
   const chatEhMeu = (de) => !!de && de === chatEu;
   const chatNovo = (c) => { const u = chatUlt[c]; return !!(u && !chatEhMeu(u.de) && (!chatLidos()[c] || chatLidos()[c] < u.criado)); };
   function chatMarcar(c, quando) { const l = chatLidos(); if (!l[c] || l[c] < quando) { l[c] = quando; gravar("al_casa_chat_lidos", l); } }
+  // 21/11/2026: além da bolinha na aba, um cartão no alto da tela avisa que tem mensagem nova (ao abrir o app já aparece)
+  const chatAvisoEl = h("div");
+  const NOME_CANAL = { "turma:som": "Operadores de som", "turma:voz": "Vozes (cantores)", "turma:regencia": "Regência", "turma:bateria": "Bateristas", "turma:musico": "Músicos" };
   function chatAviso() {
     if (!chatAbaBtn) return;
-    const algum = Object.keys(chatUlt).some((c) => chatNovo(c) && !(chatAberto && c === chatCanal));
-    chatAbaBtn.textContent = "💬 Chat" + (algum ? " 🔴" : "");
+    const novos = Object.keys(chatUlt).filter((c) => chatNovo(c) && !(chatAberto && c === chatCanal));
+    chatAbaBtn.textContent = "💬 Chat" + (novos.length ? " 🔴" : "");
+    const nomes = novos.map((c) => (c.startsWith("prof:") ? "o professor (particular)" : NOME_CANAL[c] || "a turma"));
+    AL.limpar(chatAvisoEl, novos.length && !chatAberto ? h("div", { class: "cartao", style: { "border-left": "4px solid #5aa9ff" } },
+      h("h2", {}, "💬 Mensagem nova no chat"),
+      h("p", {}, "De: " + nomes.join(", ") + "."),
+      h("button", { class: "primario", onclick: () => { const primeiro = novos[0]; irPara("chat"); if (primeiro && primeiro !== chatCanal) chatAbrir(primeiro); } }, "Ver a mensagem")) : null);
   }
   const chatHora = (iso) => { try { const d = new Date(iso), hoje = diaLocal(new Date().toISOString()) === diaLocal(iso); return (hoje ? "" : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " ") + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } };
   const chatCaixa = h("textarea", { rows: 2, maxlength: 500, placeholder: "Escreva a sua mensagem…", "aria-label": "Mensagem", style: { flex: "1", "min-width": "0" } });
@@ -377,7 +385,7 @@
       h("div", { class: "cartao" }, h("h2", {}, "Olá, " + conta.nome.split(" ")[0] + "! 👋"),
         h("p", { class: "mudo" }, "Escolha um treino. No fim de cada um, a nota vai sozinha para o professor. Use fone de ouvido nos treinos de voz e de ouvido."),
         seguidosEl, instado(), filaEl),
-      tarefaEl, avisoCert, recupEl, barra, corpoTreino, corpoBoletim, corpoNotas, corpoChat);
+      tarefaEl, chatAvisoEl, avisoCert, recupEl, barra, corpoTreino, corpoBoletim, corpoNotas, corpoChat);
     trocar("treino"); mostrarFila(); enviarFila(); atualizarResumo();
     // durante a aula o boletim muda: confere a cada minuto enquanto o app está aberto
     setInterval(() => { if (!document.hidden && conta) atualizarResumo(); }, 60000);
