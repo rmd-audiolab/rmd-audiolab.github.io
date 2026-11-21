@@ -1,4 +1,4 @@
-/* RMD AudioLab — treino em casa (16/11/2026, pedido do Rinaldo).
+/* RMD AudioLab — treino em casa (16/11/2026, pedido do Rinaldo; chat das turmas em 21/11/2026).
    O aluno entra com o código que o professor deu, treina no celular (voz, segunda voz, ouvido, regência, metrônomo)
    e a NOTA de cada treino vai para o professor pela nuvem. Sem internet, a nota fica guardada no celular e vai depois.
    O som do microfone e a imagem da câmera nunca saem do celular. */
@@ -108,6 +108,7 @@
       const d = await nuvem({ acao: "aluno_tarefa", codigo: conta.codigo });
       const antes = tarefas.map((t) => t.id).join();
       tarefas = d.tarefas || [];
+      if (d.chat) { chatEu = d.eu || chatEu; chatUlt = d.chat; chatAviso(); }
       if (tarefaAtiva && !tarefas.some((t) => t.id === tarefaAtiva.id)) tarefaAtiva = null; // o professor encerrou
       if (tarefas.map((t) => t.id).join() !== antes) { desenharTarefas(); if (tarefas.some((t) => !feitas().includes(t.id))) { try { navigator.vibrate && navigator.vibrate(200); } catch (e) { /* ok */ } } }
     } catch (e) { if (e.status === 403 && conta) sair("O seu código mudou ou foi desativado. Peça o código novo ao professor."); /* sem internet: tenta de novo */ }
@@ -134,6 +135,83 @@
         AL.toast(alvo ? "Toque no botão destacado para começar." : "Faça o exercício abaixo.");
       }, 80);
     }, 80);
+  }
+
+  // ---------------------------------------------------------------- chat (21/11/2026, pedido do Rinaldo)
+  // Conversa da turma (departamento) com o professor e os colegas, e uma conversa particular só com o professor.
+  // O aviso 🔴 de mensagem nova vem junto com a pergunta dos exercícios (a cada 5 segundos, com o app aberto).
+  const corpoChat = h("div");
+  let chatUlt = {}, chatCanais = [], chatCanal = "", chatMsgs = [], chatEu = "", chatAbaBtn = null, chatAberto = false, chatTimer = 0;
+  const chatLidos = () => ler("al_casa_chat_lidos", {});
+  const chatEhMeu = (de) => !!de && de === chatEu;
+  const chatNovo = (c) => { const u = chatUlt[c]; return !!(u && !chatEhMeu(u.de) && (!chatLidos()[c] || chatLidos()[c] < u.criado)); };
+  function chatMarcar(c, quando) { const l = chatLidos(); if (!l[c] || l[c] < quando) { l[c] = quando; gravar("al_casa_chat_lidos", l); } }
+  function chatAviso() {
+    if (!chatAbaBtn) return;
+    const algum = Object.keys(chatUlt).some((c) => chatNovo(c) && !(chatAberto && c === chatCanal));
+    chatAbaBtn.textContent = "💬 Chat" + (algum ? " 🔴" : "");
+  }
+  const chatHora = (iso) => { try { const d = new Date(iso), hoje = diaLocal(new Date().toISOString()) === diaLocal(iso); return (hoje ? "" : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " ") + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } };
+  const chatCaixa = h("textarea", { rows: 2, maxlength: 500, placeholder: "Escreva a sua mensagem…", "aria-label": "Mensagem", style: { flex: "1", "min-width": "0" } });
+  const chatEnviar = h("button", { class: "primario" }, "Enviar");
+  const chatLista = h("div", { class: "linha", style: { gap: ".4rem", "flex-wrap": "wrap", "margin-bottom": ".5rem" } });
+  const chatMsgsEl = h("div", { class: "chat-msgs" }), chatEstado = h("p", { class: "mudo", style: { margin: ".3rem 0 0", "font-size": ".85rem" } });
+  function chatDesenharLista() {
+    AL.limpar(chatLista, chatCanais.map((c) => h("button", { class: c.id === chatCanal ? "ligado" : "", onclick: () => chatAbrir(c.id) },
+      (c.id.startsWith("prof:") ? "🔒 " : "👥 ") + c.nome + (chatNovo(c.id) && c.id !== chatCanal ? " 🔴" : ""))));
+  }
+  function chatDesenharMsgs() {
+    AL.limpar(chatMsgsEl, chatMsgs.length ? chatMsgs.map((m) => {
+      const meu = chatEhMeu(m.aluno_id), prof = !m.aluno_id;
+      return h("div", { class: "chat-msg" + (meu ? " meu" : prof ? " prof" : "") },
+        h("div", { class: "chat-quem" }, meu ? "Você" : (prof ? "👨‍🏫 " : "") + m.nome, " · ", chatHora(m.criado)),
+        h("div", { class: "chat-texto" }, m.texto));
+    }) : h("p", { class: "mudo" }, chatCanal.startsWith("prof:") ? "Aqui você fala só com o professor. Ninguém mais vê." : "Ninguém escreveu ainda. Diga um olá para a turma! 👋"));
+    chatMsgsEl.scrollTop = chatMsgsEl.scrollHeight;
+  }
+  async function chatBuscar(soNovas) {
+    if (!conta) return;
+    try {
+      const pedido = chatCanal, depois = soNovas && chatMsgs.length ? chatMsgs[chatMsgs.length - 1].criado : "";
+      const d = await nuvem({ acao: "aluno_chat", codigo: conta.codigo, canal: chatCanal, depois });
+      if (pedido !== chatCanal) return;
+      chatEu = d.eu || chatEu; chatCanais = d.canais || []; chatUlt = d.ultimas || chatUlt;
+      if (!chatCanal && chatCanais.length) { const comNovo = chatCanais.find((c) => chatNovo(c.id)); chatAbrir((comNovo || chatCanais[0]).id); return; }
+      const vieram = (d.mensagens || []).filter((m) => !chatMsgs.some((x) => x.id === m.id));
+      if (!soNovas) chatMsgs = d.mensagens || []; else chatMsgs = chatMsgs.concat(vieram);
+      if (chatCanal && chatMsgs.length) chatMarcar(chatCanal, chatMsgs[chatMsgs.length - 1].criado);
+      chatDesenharLista(); if (!soNovas || vieram.length) chatDesenharMsgs(); chatAviso();
+      chatEstado.textContent = "";
+    } catch (e) {
+      if (e.status === 403 && /código/i.test(e.message)) { sair("O seu código mudou ou foi desativado. Peça o código novo ao professor."); return; }
+      if (e.status === 403) { chatCanal = ""; chatMsgs = []; }  // saiu da turma: volta para a lista
+      chatEstado.textContent = e.rede ? "📵 Sem internet agora: as mensagens aparecem quando voltar." : "⚠️ " + e.message;
+    }
+  }
+  function chatAbrir(c) { chatCanal = c; chatMsgs = []; chatDesenharLista(); chatDesenharMsgs(); chatBuscar(false); }
+  chatEnviar.onclick = async () => {
+    const t = chatCaixa.value.trim(); if (!t || !chatCanal || !conta) return;
+    chatEnviar.disabled = true;
+    try {
+      const d = await nuvem({ acao: "aluno_chat_enviar", codigo: conta.codigo, canal: chatCanal, texto: t });
+      chatCaixa.value = ""; if (d.mensagem && !chatMsgs.some((x) => x.id === d.mensagem.id)) chatMsgs.push(d.mensagem);
+      if (d.mensagem) { chatEu = d.mensagem.aluno_id || chatEu; chatMarcar(chatCanal, d.mensagem.criado); }
+      chatDesenharMsgs();
+    } catch (e) { AL.toast(e.rede ? "Sem internet agora: a mensagem não foi. Tente de novo quando voltar." : e.message, true); }
+    chatEnviar.disabled = false;
+  };
+  chatCaixa.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !/android|iphone|ipad/i.test(navigator.userAgent)) { e.preventDefault(); chatEnviar.click(); } });
+  function chatLaco() { clearTimeout(chatTimer); if (!chatAberto) return; if (!document.hidden) chatBuscar(true); chatTimer = setTimeout(chatLaco, 4000); }
+  function chatMostrar(aberto) {
+    const antes = chatAberto; chatAberto = aberto;
+    if (aberto && !antes) {
+      if (!corpoChat.childElementCount) AL.limpar(corpoChat, h("div", { class: "cartao" }, h("h2", {}, "💬 Chat"),
+        h("p", { class: "mudo", style: { margin: "0 0 .5rem" } }, "Converse com a sua turma e com o professor. Seja educado: o professor vê tudo e pode apagar mensagens."),
+        chatLista, chatMsgsEl, h("div", { class: "linha", style: { gap: ".5rem", "margin-top": ".5rem", "align-items": "flex-end" } }, chatCaixa, chatEnviar), chatEstado));
+      if (!chatCanal) chatBuscar(false);
+      chatTimer = setTimeout(chatLaco, 4000);
+    } else if (!aberto) clearTimeout(chatTimer);
+    chatAviso();
   }
 
   // ---------------------------------------------------------------- boletim e certificado (16/11/2026)
@@ -253,7 +331,8 @@
     if (!msg && !confirm("Sair deste celular? As notas que ainda não foram enviadas serão perdidas.")) return;
     try { localStorage.removeItem("al_casa_conta"); localStorage.removeItem("al_casa_fila"); localStorage.removeItem("al_casa_resumo"); } catch (e) { /* ok */ }
     resumo = { pendencias: [], itens: [], documentos: [], info: {} };
-    try { localStorage.removeItem("al_casa_cert_vistos"); } catch (e) { /* ok */ }
+    try { localStorage.removeItem("al_casa_cert_vistos"); localStorage.removeItem("al_casa_chat_lidos"); } catch (e) { /* ok */ }
+    chatMostrar(false); chatUlt = {}; chatCanais = []; chatCanal = ""; chatMsgs = []; chatEu = ""; AL.limpar(corpoChat);
     conta = null; FerramentasAL.parar(); telaEntrar(msg);
   }
 
@@ -263,14 +342,16 @@
     aplicarResumo();
     cab("Treino em casa", h("button", { onclick: () => sair() }, "Sair"));
     const corpoTreino = h("div"), corpoNotas = h("div");
-    const abas = [["treino", "🎤 Treinar", corpoTreino], ["boletim", "🎓 Boletim", corpoBoletim], ["notas", "📋 Meus treinos", corpoNotas]];
+    const abas = [["treino", "🎤 Treinar", corpoTreino], ["boletim", "🎓 Boletim", corpoBoletim], ["notas", "📋 Meus treinos", corpoNotas], ["chat", "💬 Chat", corpoChat]];
     const barra = h("div", { class: "abas" }, abas.map(([id, t]) => h("button", { "data-aba": id, onclick: () => trocar(id) }, t)));
     function trocar(id) {
       barra.querySelectorAll("button").forEach((b) => b.classList.toggle("ligado", b.dataset.aba === id));
       abas.forEach(([x, , el]) => el.classList.toggle("oculto", x !== id));
       if (id === "notas") carregarNotas(); else if (id === "treino" && !corpoTreino.childElementCount) FerramentasAL.montar(corpoTreino, { semTelao: true, itens: ferramentasDoAluno() });
       if (id !== "treino") FerramentasAL.parar();
+      chatMostrar(id === "chat");
     }
+    chatAbaBtn = barra.querySelector('[data-aba="chat"]');
     irPara = (id) => { trocar(id); barra.scrollIntoView({ behavior: "smooth" }); };
     // o professor mudou o tipo de acesso: monta de novo a lista de treinos
     refazerTreino = () => { if (!corpoTreino.childElementCount) return; FerramentasAL.parar(); AL.limpar(corpoTreino); if (!corpoTreino.classList.contains("oculto")) trocar("treino"); };
@@ -296,7 +377,7 @@
       h("div", { class: "cartao" }, h("h2", {}, "Olá, " + conta.nome.split(" ")[0] + "! 👋"),
         h("p", { class: "mudo" }, "Escolha um treino. No fim de cada um, a nota vai sozinha para o professor. Use fone de ouvido nos treinos de voz e de ouvido."),
         seguidosEl, instado(), filaEl),
-      tarefaEl, avisoCert, recupEl, barra, corpoTreino, corpoBoletim, corpoNotas);
+      tarefaEl, avisoCert, recupEl, barra, corpoTreino, corpoBoletim, corpoNotas, corpoChat);
     trocar("treino"); mostrarFila(); enviarFila(); atualizarResumo();
     // durante a aula o boletim muda: confere a cada minuto enquanto o app está aberto
     setInterval(() => { if (!document.hidden && conta) atualizarResumo(); }, 60000);
