@@ -80,6 +80,23 @@ const DocsAL = (() => {
         + notaSVG(124, 130, 0.8, ARTE_V, true) + notaSVG(40, 160, 0.6, ARTE_V, false) + "</svg>",
       marca: "🥁", rotulo: "Bateria",
     },
+    // 21/11/2026: músicos (violão à esquerda, teclado à direita)
+    musico: {
+      esq: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 240">'
+        + '<rect x="72" y="8" width="16" height="26" rx="4" fill="#1d2b28"/>'
+        + [12, 20, 28].map((y) => '<circle cx="68" cy="' + y + '" r="3" fill="' + ARTE_O + '"/><circle cx="92" cy="' + y + '" r="3" fill="' + ARTE_O + '"/>').join("")
+        + '<rect x="74" y="32" width="12" height="96" fill="#3a2a1a"/>'
+        + Array.from({ length: 6 }, (_, i) => '<line x1="74" y1="' + (44 + i * 14) + '" x2="86" y2="' + (44 + i * 14) + '" stroke="' + ARTE_O + '" stroke-width="1.5"/>').join("")
+        + '<path d="M80 120 C44 120 40 150 52 162 C30 172 26 222 80 226 C134 222 130 172 108 162 C120 150 116 120 80 120 Z" fill="' + ARTE_V + '" stroke="' + ARTE_O + '" stroke-width="3"/>'
+        + '<circle cx="80" cy="168" r="14" fill="#1d2b28" stroke="' + ARTE_O + '" stroke-width="2"/><rect x="62" y="200" width="36" height="7" rx="2" fill="#1d2b28"/>'
+        + [76, 78.5, 81, 83.5].map((x) => '<line x1="' + x + '" y1="34" x2="' + x + '" y2="203" stroke="#e8f3ef" stroke-width="0.8"/>').join("")
+        + notaSVG(130, 60, 0.7, ARTE_O, true) + "</svg>",
+      dir: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 240"><rect x="40" y="20" width="84" height="206" rx="8" fill="#1d2b28"/><rect x="46" y="26" width="72" height="194" rx="4" fill="' + ARTE_O + '"/>'
+        + Array.from({ length: 10 }, (_, i) => '<rect x="48" y="' + (28 + i * 19) + '" width="68" height="17" rx="2" fill="#fffdf6"/>').join("")
+        + [0, 1, 3, 4, 5, 7, 8].map((i) => '<rect x="48" y="' + (40 + i * 19) + '" width="40" height="11" rx="1.5" fill="' + ARTE_V + '"/>').join("")
+        + notaSVG(24, 70, 0.7, ARTE_V, false) + notaSVG(140, 170, 0.6, ARTE_V, true) + "</svg>",
+      marca: "🎸", rotulo: "Músicos",
+    },
   };
 
   // ---------- logo do curso: selo redondo com nota musical e ondas de som
@@ -105,7 +122,7 @@ const DocsAL = (() => {
     let notas = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 140"><g opacity="0.07">' + notaSVG(24, 46, 0.55, "#0b6b5a", false) + notaSVG(88, 112, 0.5, "#9c7a12", true) + "</g></svg>";
     return { ondas: dataURI(ondas), notas: dataURI(notas), logo: dataURI('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g opacity="0.09">' + logoSVG(100).replace(/^<svg[^>]*>/, "").replace(/<\/svg>$/, "") + "</g></svg>") };
   }
-  const ICONE = { som: "🎚️", louvor: "🎤", regencia: "🎼", bateria: "🥁" };
+  const ICONE = { som: "🎚️", louvor: "🎤", regencia: "🎼", bateria: "🥁", musico: "🎸" };
 
   // ======================================================================= BOLETIM
   function boletimHTML(doc, info) {
