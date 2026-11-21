@@ -1,0 +1,5 @@
+Bibliotecas de terceiros usadas pelo RMD AudioLab (20/11/2026). Todas com licença livre que NÃO obriga a abrir o código do AudioLab.
+- basic-pitch/: Basic Pitch 1.0.1 (Spotify, Apache-2.0) + TensorFlow.js 3.21 (Google, Apache-2.0). Transforma um louvor gravado em notas.
+  Montado com esbuild a partir do npm (C:\RMD_Build\audiolab-libs\entrada_basicpitch.js). Licenças: LICENSE-*.txt.
+- vexflow/: VexFlow 5.6.0 com a fonte Bravura (MIT; fonte Bravura: SIL Open Font License). Desenha a partitura de bateria.
+Os arquivos só carregam quando a tela que usa cada um é aberta.
