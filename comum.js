@@ -55,6 +55,17 @@ const AL = {
     if (estado === "denied") { AL.ajudaPermissao(tipo, { estado, erro: "bloqueado antes de pedir" }); throw new Error("A permissão de " + M.nome + " está bloqueada neste aparelho. Veja na caixa como liberar."); }
     AL._explicado = AL._explicado || {};
     if (estado === "prompt" && !AL._explicado[tipo]) { await AL._avisoPermissao(tipo); AL._explicado[tipo] = true; }
+    // 21/11/2026 (pedido do Rinaldo): usa o microfone escolhido (ex.: interface de áudio USB). Se ele sumiu, volta ao padrão do Windows.
+    const escolhido = tipo === "microfone" ? AL.microfoneEscolhido() : "";
+    if (escolhido) {
+      const base = restricoes || M.padrao;
+      const audio = Object.assign({}, base.audio === true || !base.audio ? {} : base.audio, { deviceId: { exact: escolhido } });
+      try { return await navigator.mediaDevices.getUserMedia(Object.assign({}, base, { audio })); }
+      catch (e) {
+        if (e.name !== "NotFoundError" && e.name !== "OverconstrainedError") throw e;
+        AL.toast("O microfone escolhido não está ligado. Usando o microfone padrão do computador.", true);
+      }
+    }
     try { return await navigator.mediaDevices.getUserMedia(restricoes || M.padrao); }
     catch (e) {
       if (e.name === "NotAllowedError" || e.name === "SecurityError") { AL.ajudaPermissao(tipo, { estado, erro: e.name + (e.message ? " · " + e.message : "") }); throw new Error("Sem permissão de " + M.nome + ". Veja na caixa como liberar e tente de novo."); }
@@ -62,6 +73,50 @@ const AL = {
       if (e.name === "NotReadableError" || e.name === "AbortError") throw new Error("A " + M.nome + " está sendo usada por outro aplicativo (ligação, gravador, WhatsApp, outra aba…). Feche e tente de novo.");
       throw new Error("Não consegui ligar " + (tipo === "camera" ? "a câmera" : "o microfone") + ": " + e.message);
     }
+  },
+  // ---------- escolha do microfone (21/11/2026): no computador pode haver o microfone do notebook e uma interface de áudio USB.
+  // A escolha fica guardada neste computador e vale para todas as ferramentas (afinador, voz, bateria, músicos).
+  microfoneEscolhido() { try { return localStorage.getItem("al_microfone") || ""; } catch (e) { return ""; } },
+  async escolherMicrofone(aoEscolher) {
+    let teste = null, ctx = null, laco = 0;
+    const parar = () => { cancelAnimationFrame(laco); if (teste) teste.getTracks().forEach((t) => t.stop()); teste = null; if (ctx) ctx.close().catch(() => {}); ctx = null; };
+    let base;
+    try { base = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { AL.toast("Não consegui ligar o microfone: " + e.message, true); return; }
+    base.getTracks().forEach((t) => t.stop());
+    const lista = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput" && d.deviceId !== "communications");
+    const barra = AL.h("div", { style: { height: "100%", width: "0%", background: "#3ccf91", transition: "width .08s" } });
+    const medidor = AL.h("div", { style: { height: "18px", background: "rgba(127,127,127,.25)", "border-radius": "9px", overflow: "hidden", margin: ".4rem 0 .8rem" } }, barra);
+    const atual = AL.microfoneEscolhido();
+    let marcado = lista.some((d) => d.deviceId === atual) ? atual : "";
+    const nomeDe = (d) => d.deviceId === "default" ? "Padrão do Windows (" + (d.label || "").replace(/^Padrão - |^Default - /, "") + ")" : (d.label || "Microfone sem nome");
+    const ouvir = async (id) => {
+      parar(); barra.style.width = "0%";
+      try {
+        teste = await navigator.mediaDevices.getUserMedia({ audio: id ? { deviceId: { exact: id }, echoCancellation: false, noiseSuppression: false, autoGainControl: false } : true });
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const an = ctx.createAnalyser(); an.fftSize = 1024; ctx.createMediaStreamSource(teste).connect(an);
+        const buf = new Float32Array(an.fftSize);
+        const passo = () => { an.getFloatTimeDomainData(buf); let p = 0; for (const v of buf) p = Math.max(p, Math.abs(v)); barra.style.width = Math.min(100, Math.round(p * 140)) + "%"; laco = requestAnimationFrame(passo); };
+        passo();
+      } catch (e) { AL.toast("Esse microfone não abriu: " + e.message, true); }
+    };
+    const opcoes = lista.map((d) => {
+      const id = d.deviceId === "default" ? "" : d.deviceId;
+      const r = AL.h("input", { type: "radio", name: "al-mic", checked: id === marcado, onchange: () => { marcado = id; ouvir(id); } });
+      return AL.h("label", { style: { display: "flex", gap: ".5rem", "align-items": "center", margin: ".35rem 0", cursor: "pointer" } }, r, nomeDe(d));
+    });
+    const j = AL._janela("🎤 Qual microfone usar?",
+      AL.h("p", {}, "Escolha o microfone e fale ou cante: a barra verde tem que mexer."),
+      opcoes.length ? opcoes : AL.h("p", {}, "Nenhum microfone encontrado."),
+      medidor,
+      AL.h("p", { class: "mudo" }, "Interface de áudio USB costuma aparecer como “USB Audio CODEC” ou com o nome da marca. A escolha fica guardada neste computador."),
+      AL.h("button", { class: "primario bloco", onclick: () => { try { if (marcado) localStorage.setItem("al_microfone", marcado); else localStorage.removeItem("al_microfone"); } catch (e) {} parar(); j.remove(); AL.toast("Microfone escolhido. Vale para todas as ferramentas."); if (aoEscolher) aoEscolher(); } }, "Usar este microfone"),
+      AL.h("button", { class: "bloco", style: { "margin-top": ".5rem" }, onclick: () => { parar(); j.remove(); } }, "Cancelar"));
+    ouvir(marcado);
+  },
+  async nomeMicrofoneEscolhido() {
+    const id = AL.microfoneEscolhido(); if (!id) return "Padrão do Windows";
+    try { const d = (await navigator.mediaDevices.enumerateDevices()).find((x) => x.deviceId === id); return d && d.label ? d.label : "Escolhido (desligado agora)"; } catch (e) { return "Escolhido"; }
   },
   _janela(titulo, ...conteudo) {
     const fundo = AL.h("div", { role: "dialog", "aria-modal": "true", style: { position: "fixed", inset: "0", "z-index": "200", background: "rgba(0,0,0,.65)", display: "flex", "align-items": "center", "justify-content": "center", padding: "1rem" } });
@@ -167,3 +222,26 @@ const AL = {
     };
   },
 };
+
+// 21/11/2026 (Luciana: metrônomo sem som no celular): no iPhone, com a chavinha do silencioso ligada, o som dos treinos
+// (Web Audio) fica mudo mesmo com o volume alto. No primeiro toque na tela, pedimos ao celular para tratar o site como
+// "tocador de mídia" (audioSession) e, no iPhone/iPad, tocamos um áudio silencioso em repetição, que faz o mesmo nos aparelhos antigos.
+(function () {
+  let feito = false;
+  function silencio() {
+    const n = 8000, b = new Uint8Array(44 + n), v = new DataView(b.buffer);
+    const txt = (o, s) => { for (let i = 0; i < s.length; i++) b[o + i] = s.charCodeAt(i); };
+    txt(0, "RIFF"); v.setUint32(4, 36 + n, true); txt(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true); txt(36, "data"); v.setUint32(40, n, true);
+    b.fill(128, 44);
+    return URL.createObjectURL(new Blob([b], { type: "audio/wav" }));
+  }
+  function liberar() {
+    if (feito) return; feito = true;
+    try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) { /* ok */ }
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+    if (!ios) return;
+    try { const a = new Audio(silencio()); a.loop = true; a.setAttribute("playsinline", ""); a.play().catch(() => {}); AL._audioSilencio = a; } catch (e) { /* ok */ }
+  }
+  ["touchend", "click", "keydown"].forEach((ev) => document.addEventListener(ev, liberar, { capture: true, passive: true }));
+})();

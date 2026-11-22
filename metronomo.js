@@ -125,7 +125,7 @@ const Metronomo = (function () {
     function redesenharGesto() {
       parar(); parar = () => {};
       const c = comp();
-      if (typeof FIG === "undefined" || !c[3]) { AL.limpar(gesto); gesto.style.display = "none"; return; }
+      if (typeof FIG === "undefined" || !c[3] || typeof FIG.F[c[3]] !== "function") { /* 21/11/2026: no app do aluno os desenhos (etapas.js) não vêm: sem isto dava erro */ AL.limpar(gesto); gesto.style.display = "none"; return; }
       gesto.style.display = ""; gesto.innerHTML = FIG.F[c[3]]({ bpm, dur: tempos * 60 / bpm, nome: tempos === 6 ? "6/8 (regido em 2)" : null });
       if (m.tocando) parar = sincronizar(gesto, m.inicio);
     }
@@ -151,7 +151,10 @@ const Metronomo = (function () {
       h("label", {}, "Andamento"), h("div", { class: "linha", style: { "align-items": "center", gap: ".5rem", "flex-wrap": "wrap" } },
         h("button", { onclick: () => { bpm -= 1; atualizar(true); } }, "−"), num, h("button", { onclick: () => { bpm += 1; atualizar(true); } }, "+"), nome),
       faixa, h("label", {}, "Volume"), vol,
-      h("div", { style: { margin: ".7rem 0" } }, botao), caixaLuzes, toque, gesto));
+      h("div", { style: { margin: ".7rem 0" } }, botao),
+      // 21/11/2026: aviso para quando o celular não toca (caso da Luciana)
+      h("p", { class: "mudo" }, "Sem som? Aperte o botão de aumentar volume com o metrônomo tocando (é o volume de mídia, não o da campainha). No iPhone, desligue também a chavinha do silencioso, na lateral."),
+      caixaLuzes, toque, gesto));
     atualizar(false);
     return { parar: () => { m.parar(true); parar(); } };
   }
