@@ -1,6 +1,6 @@
 /* RMD AudioLab — treino em casa: guarda o app no celular para abrir mesmo sem internet.
    Busca sempre a versão nova quando tem internet; sem internet, usa a cópia guardada. A nuvem (notas) não passa por aqui. */
-const CACHE = "rmd-audiolab-casa-20261121230359";
+const CACHE = "rmd-audiolab-casa-20261121234022";
 const ARQUIVOS = ["./", "index.html", "casa.js", "comum.css", "comum.js", "motor.js", "figuras.js", "metronomo.js", "bateria.js", "musicos.js", "vocal.js", "treinos.js", "ferramentas.js", "documentos.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {

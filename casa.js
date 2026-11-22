@@ -6,9 +6,48 @@
 (function () {
   const NUVEM = "https://cxzzutbijljjteapowuv.supabase.co/functions/v1/audiolab";
   const h = AL.h, app = document.getElementById("app"), cabeca = document.getElementById("cabeca");
-  const ler = (k, p) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : p; } catch (e) { return p; } };
-  const gravar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* sem armazenamento */ } };
-  let conta = ler("al_casa_conta", null); // { codigo, nome }
+  const lerG = (k, p) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : p; } catch (e) { return p; } };
+  const gravarG = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* sem armazenamento */ } };
+  // ---------------------------------------------------------------- várias pessoas no mesmo aparelho (21/11/2026, pedido do Rinaldo:
+  // mãe e filha no mesmo iPhone, ou um tablet usado por 2 ou 3 pessoas). Cada pessoa tem o seu código e as suas coisas guardadas
+  // separadas (notas esperando internet, boletim, chat lido…). O endereço fica com "?eu=<apelido do aparelho>" (não é o código),
+  // então o ícone posto na tela de início a partir da página de uma pessoa abre direto nela. Com 2 ou mais, o app pergunta quem vai treinar.
+  const PESSOAIS = ["al_casa_fila", "al_casa_resumo", "al_casa_tarefas_feitas", "al_casa_chat_lidos", "al_casa_cert_vistos"];
+  const novoId = () => Math.random().toString(36).slice(2, 8);
+  let contas = lerG("al_casa_contas", null);
+  if (!Array.isArray(contas)) {   // primeira vez com esta versão: a pessoa que já estava no aparelho vira a primeira da lista
+    contas = [];
+    const velha = lerG("al_casa_conta", null);
+    if (velha && velha.codigo) {
+      velha.id = novoId(); contas.push(velha);
+      PESSOAIS.forEach((k) => { try { const v = localStorage.getItem(k); if (v != null && localStorage.getItem(k + ":" + velha.codigo) == null) localStorage.setItem(k + ":" + velha.codigo, v); } catch (e) { /* ok */ } });
+    }
+    gravarG("al_casa_contas", contas);
+  }
+  const q = new URLSearchParams(location.search), codigoLink = (q.get("c") || "").toUpperCase().trim(), euLink = q.get("eu") || "", pedeQuem = q.has("quem");
+  let conta = null; // { codigo, nome, turmas, id }
+  if (euLink) conta = contas.find((x) => x.id === euLink) || null;
+  if (codigoLink) conta = contas.find((x) => x.codigo === codigoLink) || null;
+  if (!conta && !euLink && !codigoLink && contas.length === 1) conta = contas[0];
+  if (pedeQuem) conta = null;
+  const chave = (k) => (PESSOAIS.includes(k) && conta ? k + ":" + conta.codigo : k);
+  const ler = (k, p) => lerG(chave(k), p);
+  const gravar = (k, v) => gravarG(chave(k), v);
+  const pagina = (extra) => location.pathname + (extra || "");
+  function salvarConta(c) {
+    const ja = contas.find((x) => x.codigo === c.codigo);
+    const nova = Object.assign(ja || { id: novoId() }, c);
+    if (!ja) contas.push(nova);
+    gravarG("al_casa_contas", contas);
+    return nova;
+  }
+  // deixa o endereço com o apelido da pessoa e o nome dela no título (o iPhone usa o título como nome do ícone)
+  function marcarPessoa() {
+    try { history.replaceState(null, "", pagina("?eu=" + conta.id)); } catch (e) { /* ok */ }
+    const primeiro = String(conta.nome || "").split(" ")[0];
+    document.title = "AudioLab " + primeiro;
+    const m = document.querySelector('meta[name="apple-mobile-web-app-title"]'); if (m) m.setAttribute("content", "AudioLab " + primeiro);
+  }
   let pedidoInstalar = null;
   const filaEl = h("p", { class: "aviso", style: { margin: ".3rem 0" } });
   const instalarBtn = h("button", { class: "primario oculto", onclick: instalar }, "📲 Instalar o ícone no celular");
@@ -321,34 +360,52 @@
 
   // ---------------------------------------------------------------- entrar
   function telaEntrar(msg, codigoInicial) {
-    cab("Treino em casa");
+    cab("Treino em casa", contas.length ? h("button", { onclick: () => location.replace(pagina(contas.length > 1 ? "?quem=1" : "?eu=" + contas[0].id)) }, "Voltar") : null);
     const cod = h("input", { class: "codigo", maxlength: 12, value: codigoInicial || "", placeholder: "XXXX-XXXX", autocomplete: "off", "aria-label": "Código do aluno" });
     const botao = h("button", { class: "primario bloco", style: { "margin-top": "1rem" } }, "Entrar");
     AL.limpar(app, h("div", { class: "cartao entrar" },
       h("h2", {}, "🎧 Treino em casa"),
       h("p", {}, "Digite o código que o professor te passou. Ele vem na mensagem junto com o link."),
+      contas.length ? h("p", { class: "mudo" }, "Este aparelho já tem: " + contas.map((x) => x.nome).join(", ") + ". Entrando com outro código, a pessoa nova fica separada.") : null,
       msg ? h("p", { class: "erro" }, msg) : null,
       h("form", { onsubmit: async (e) => {
         e.preventDefault(); botao.disabled = true;
-        try { const r = await nuvem({ acao: "aluno_entrar", codigo: cod.value }); conta = { codigo: cod.value.toUpperCase().trim(), nome: r.nome, turmas: r.turmas || [] }; gravar("al_casa_conta", conta); montar(); }
+        try { const r = await nuvem({ acao: "aluno_entrar", codigo: cod.value }); const c = salvarConta({ codigo: cod.value.toUpperCase().trim(), nome: r.nome, turmas: r.turmas || [] }); location.replace(pagina("?eu=" + c.id)); }
         catch (er) { AL.toast(er.rede ? "Sem internet agora. Para entrar a primeira vez precisa de internet." : er.message, true); botao.disabled = false; }
       } }, h("label", {}, "Código do aluno"), cod, botao)));
     if (!codigoInicial) cod.focus();
   }
   function sair(msg) {
-    if (!msg && !confirm("Sair deste celular? As notas que ainda não foram enviadas serão perdidas.")) return;
-    try { localStorage.removeItem("al_casa_conta"); localStorage.removeItem("al_casa_fila"); localStorage.removeItem("al_casa_resumo"); } catch (e) { /* ok */ }
+    if (!msg && !confirm("Tirar " + (conta ? conta.nome : "esta pessoa") + " deste aparelho? As notas dela que ainda não foram enviadas serão perdidas.")) return;
+    try { PESSOAIS.forEach((k) => localStorage.removeItem(chave(k))); localStorage.removeItem("al_casa_conta"); } catch (e) { /* ok */ }
+    if (conta) { contas = contas.filter((x) => x.codigo !== conta.codigo); gravarG("al_casa_contas", contas); }
+    if (contas.length) { if (msg) alert(msg); location.replace(pagina(contas.length > 1 ? "?quem=1" : "?eu=" + contas[0].id)); return; }
+    try { localStorage.removeItem("al_casa_fila"); localStorage.removeItem("al_casa_resumo"); } catch (e) { /* ok */ }
     resumo = { pendencias: [], itens: [], documentos: [], info: {} };
     try { localStorage.removeItem("al_casa_cert_vistos"); localStorage.removeItem("al_casa_chat_lidos"); } catch (e) { /* ok */ }
     chatMostrar(false); chatUlt = {}; chatCanais = []; chatCanal = ""; chatMsgs = []; chatEu = ""; AL.limpar(corpoChat);
     conta = null; FerramentasAL.parar(); telaEntrar(msg);
   }
 
+  // ---------------------------------------------------------------- quem vai treinar? (várias pessoas no mesmo aparelho)
+  function telaQuem() {
+    cab("Treino em casa");
+    AL.limpar(app, h("div", { class: "cartao entrar" },
+      h("h2", {}, "👥 Quem vai treinar agora?"),
+      h("p", { class: "mudo" }, "Cada pessoa tem as suas notas e o seu boletim separados."),
+      contas.map((x) => h("button", { class: "primario bloco", style: { "margin-top": ".6rem", "font-size": "1.15rem" }, onclick: () => location.href = pagina("?eu=" + x.id) }, "🎧 " + x.nome)),
+      h("button", { class: "bloco", style: { "margin-top": "1.2rem" }, onclick: () => telaEntrar() }, "➕ Outra pessoa (tenho um código)"),
+      h("p", { class: "mudo", style: { "margin-top": "1rem" } }, "Dica: abra a página de uma pessoa e use “Adicionar à tela de início” para ela ter o próprio ícone.")));
+  }
+
   // ---------------------------------------------------------------- tela principal
   function montar() {
     TreinosAL.comoCasa(enviarTreino);
     aplicarResumo();
-    cab("Treino em casa", h("button", { onclick: () => sair() }, "Sair"));
+    marcarPessoa();
+    cab("Treino em casa", h("div", { style: { display: "flex", gap: ".4rem" } },
+      h("button", { onclick: () => location.href = pagina("?quem=1"), title: "Trocar de pessoa ou pôr outra pessoa neste aparelho" }, contas.length > 1 ? "👥 Trocar" : "👥 +Pessoa"),
+      h("button", { onclick: () => sair() }, "Sair")));
     const corpoTreino = h("div"), corpoNotas = h("div");
     const abas = [["treino", "🎤 Treinar", corpoTreino], ["boletim", "🎓 Boletim", corpoBoletim], ["notas", "📋 Meus treinos", corpoNotas], ["chat", "💬 Chat", corpoChat]];
     const barra = h("div", { class: "abas" }, abas.map(([id, t]) => h("button", { "data-aba": id, onclick: () => trocar(id) }, t)));
@@ -396,17 +453,17 @@
 
   // ---------------------------------------------------------------- começo
   if ("serviceWorker" in navigator && /\/$|index\.html$/.test(location.pathname)) navigator.serviceWorker.register("sw.js").catch(() => {});
-  const q = new URLSearchParams(location.search), codigoLink = (q.get("c") || "").toUpperCase();
   if (codigoLink) history.replaceState(null, "", location.pathname); // o código não fica aparecendo na barra
-  if (conta && (!codigoLink || codigoLink === conta.codigo)) { montar(); return; }
+  if (conta) { montar(); return; }
   if (codigoLink) {
-    // veio pelo link do professor: entra sozinho
+    // veio pelo link do professor: entra sozinho (se o aparelho já tem outra pessoa, esta fica separada)
     cab("Treino em casa");
     AL.limpar(app, h("p", { class: "mudo" }, "Entrando…"));
     nuvem({ acao: "aluno_entrar", codigo: codigoLink })
-      .then((r) => { conta = { codigo: codigoLink, nome: r.nome, turmas: r.turmas || [] }; gravar("al_casa_conta", conta); montar(); })
+      .then((r) => { const c = salvarConta({ codigo: codigoLink, nome: r.nome, turmas: r.turmas || [] }); location.replace(pagina("?eu=" + c.id)); })
       .catch((e) => telaEntrar(e.rede ? "Sem internet agora. Conecte e tente de novo." : e.message, codigoLink));
     return;
   }
+  if (contas.length) { telaQuem(); return; }
   telaEntrar();
 })();
