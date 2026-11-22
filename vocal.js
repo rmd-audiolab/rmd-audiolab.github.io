@@ -232,7 +232,7 @@ const LabVoz = (function () {
     };
     async function comMic(fn) {
       try { await abrirMic(); status.textContent = "🎙 Microfone ligado. Cante perto do microfone do computador (ou use fone de ouvido para o som do exemplo não atrapalhar)."; fn(); }
-      catch (e) { status.textContent = "⚠️ " + (e.message && e.message.includes("seguro") ? e.message : "O navegador não liberou o microfone. Permita o microfone e tente de novo."); }
+      catch (e) { status.textContent = "⚠️ " + (e.message && e.message.includes("seguro") ? e.message : "O navegador não liberou o microfone. Permita o microfone e tente de novo." + (e.message ? " (" + e.message + ")" : "")); }
     }
     const V = () => VOZES[voz];
     const sorteio = (a, b) => a + Math.floor(Math.random() * (b - a + 1));

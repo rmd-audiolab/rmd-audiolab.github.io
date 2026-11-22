@@ -56,6 +56,8 @@ const AL = {
     AL._explicado = AL._explicado || {};
     if (estado === "prompt" && !AL._explicado[tipo]) { await AL._avisoPermissao(tipo); AL._explicado[tipo] = true; }
     // 21/11/2026 (pedido do Rinaldo): usa o microfone escolhido (ex.: interface de áudio USB). Se ele sumiu, volta ao padrão do Windows.
+    // iPhone: o modo do som precisa permitir gravar, senão o microfone não liga (volta ao automático)
+    if (tipo === "microfone") { try { if (navigator.audioSession && navigator.audioSession.type !== "auto") navigator.audioSession.type = "auto"; } catch (e) { /* ok */ } }
     const escolhido = tipo === "microfone" ? AL.microfoneEscolhido() : "";
     if (escolhido) {
       const base = restricoes || M.padrao;
@@ -238,7 +240,7 @@ const AL = {
   }
   function liberar() {
     if (feito) return; feito = true;
-    try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) { /* ok */ }
+    // (21/11/2026, 23h: tirado o audioSession "playback": no iPhone ele impedia o microfone de ligar. Fica só o áudio silencioso.)
     const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
     if (!ios) return;
     try { const a = new Audio(silencio()); a.loop = true; a.setAttribute("playsinline", ""); a.play().catch(() => {}); AL._audioSilencio = a; } catch (e) { /* ok */ }
