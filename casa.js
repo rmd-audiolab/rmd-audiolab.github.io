@@ -50,6 +50,8 @@
   }
   let pedidoInstalar = null;
   const filaEl = h("p", { class: "aviso", style: { margin: ".3rem 0" } });
+  const prazoEl = h("p", { class: "mudo", style: { margin: ".4rem 0 0", "font-size": ".85rem" } });
+  const mostrarPrazo = () => { prazoEl.textContent = "🔒 Entre pelo menos a cada " + ((conta && conta.prazo) || 15) + " dias: quem fica mais tempo sem entrar tem o acesso bloqueado."; };
   const instalarBtn = h("button", { class: "primario oculto", onclick: instalar }, "📲 Instalar o ícone no celular");
 
   AL.tema("escuro");
@@ -60,7 +62,7 @@
     try { r = await fetch(NUVEM, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo), cache: "no-store" }); }
     catch (e) { const er = new Error("Sem internet agora."); er.rede = true; throw er; }
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) { const er = new Error(d.erro || "Erro " + r.status); er.status = r.status; throw er; }
+    if (!r.ok) { const er = new Error(d.erro || "Erro " + r.status); er.status = r.status; er.trava = d.trava || ""; throw er; }
     return d;
   }
 
@@ -123,8 +125,8 @@
     return s.size ? ORDEM_FERR.filter((x) => s.has(x)) : ORDEM_FERR;
   }
   async function atualizarResumo() {
-    if (!conta) return;
-    try { const d = await nuvem({ acao: "aluno_resumo", codigo: conta.codigo }); const tiposAntes = (resumo.turmas || []).join(); resumo = { pendencias: d.pendencias || [], itens: d.itens || [], documentos: d.documentos || [], info: d.info || {}, dias: d.dias || [], turmas: d.turmas || [] }; if (tiposAntes !== resumo.turmas.join()) refazerTreino(); gravar("al_casa_resumo", resumo); } catch (e) { if (e.status === 403) { sair("O seu código mudou ou foi desativado. Peça o código novo ao professor."); return; } /* sem internet: usa o guardado */ }
+    if (!conta || travado) return;
+    try { const d = await nuvem({ acao: "aluno_resumo", codigo: conta.codigo }); const tiposAntes = (resumo.turmas || []).join(); resumo = { pendencias: d.pendencias || [], itens: d.itens || [], documentos: d.documentos || [], info: d.info || {}, dias: d.dias || [], turmas: d.turmas || [] }; if (d.prazo && conta.prazo !== d.prazo) { conta.prazo = d.prazo; gravarG("al_casa_contas", contas); } mostrarPrazo(); if (tiposAntes !== resumo.turmas.join()) refazerTreino(); gravar("al_casa_resumo", resumo); } catch (e) { if (e.status === 403) { perdeuAcesso(e); return; } /* sem internet: usa o guardado */ }
     aplicarResumo();
   }
 
@@ -142,7 +144,7 @@
       tarefaAtiva && tarefaAtiva.id === t.id ? h("p", { class: "mudo", style: { margin: ".3rem 0 0" } }, "Faça o treino abaixo: a nota vai direto para o professor.") : null)));
   }
   async function buscarTarefas() {
-    if (!conta || document.hidden) return;
+    if (!conta || document.hidden || travado) return;
     try {
       const d = await nuvem({ acao: "aluno_tarefa", codigo: conta.codigo });
       const antes = tarefas.map((t) => t.id).join();
@@ -150,7 +152,7 @@
       if (d.chat) { chatEu = d.eu || chatEu; chatUlt = d.chat; chatAviso(); }
       if (tarefaAtiva && !tarefas.some((t) => t.id === tarefaAtiva.id)) tarefaAtiva = null; // o professor encerrou
       if (tarefas.map((t) => t.id).join() !== antes) { desenharTarefas(); if (tarefas.some((t) => !feitas().includes(t.id))) { try { navigator.vibrate && navigator.vibrate(200); } catch (e) { /* ok */ } } }
-    } catch (e) { if (e.status === 403 && conta) sair("O seu código mudou ou foi desativado. Peça o código novo ao professor."); /* sem internet: tenta de novo */ }
+    } catch (e) { if (e.status === 403 && conta) perdeuAcesso(e); /* sem internet: tenta de novo */ }
   }
   function comecarTarefa(t) {
     const c = TreinosAL.TAREFAS[t.tipo]; if (!c) return;
@@ -230,7 +232,7 @@
       chatDesenharLista(); if (!soNovas || vieram.length) chatDesenharMsgs(); chatAviso();
       chatEstado.textContent = "";
     } catch (e) {
-      if (e.status === 403 && /código/i.test(e.message)) { sair("O seu código mudou ou foi desativado. Peça o código novo ao professor."); return; }
+      if (e.status === 403 && (e.trava || /código/i.test(e.message))) { perdeuAcesso(e); return; }
       if (e.status === 403) { chatCanal = ""; chatMsgs = []; }  // saiu da turma: volta para a lista
       chatEstado.textContent = e.rede ? "📵 Sem internet agora: as mensagens aparecem quando voltar." : "⚠️ " + e.message;
     }
@@ -321,7 +323,7 @@
     const resto = [];
     for (const t of fila) {
       try { await nuvem({ acao: "aluno_treino", codigo: conta.codigo, area: t.area, treino: t.treino, nota: t.nota, detalhe: t.detalhe, tarefa: t.tarefa || "" }); }
-      catch (e) { if (e.rede || e.status >= 500 || e.status === 429) resto.push(t); }
+      catch (e) { if (e.rede || e.status >= 500 || e.status === 429 || e.trava === "pausa") resto.push(t); }
     }
     gravar("al_casa_fila", resto); mostrarFila();
   }
@@ -335,13 +337,13 @@
       return { ok: true };
     }
     catch (e) {
-      if (e.rede || e.status >= 500) {
+      if (e.rede || e.status >= 500 || e.trava === "pausa") {
         const f = ler("al_casa_fila", []);
         f.push({ ...t, detalhe: (t.detalhe ? t.detalhe + " · " : "") + "feito em " + agoraTxt() });
         gravar("al_casa_fila", f.slice(-200)); mostrarFila();
         return { fila: true };
       }
-      if (e.status === 403) setTimeout(() => sair("O seu código mudou ou foi desativado. Peça o código novo ao professor."), 1500);
+      if (e.status === 403) setTimeout(() => perdeuAcesso(e), 1500);
       throw e;
     }
   }
@@ -370,13 +372,41 @@
       msg ? h("p", { class: "erro" }, msg) : null,
       h("form", { onsubmit: async (e) => {
         e.preventDefault(); botao.disabled = true;
-        try { const r = await nuvem({ acao: "aluno_entrar", codigo: cod.value }); const c = salvarConta({ codigo: cod.value.toUpperCase().trim(), nome: r.nome, turmas: r.turmas || [] }); location.replace(pagina("?eu=" + c.id)); }
+        try { const r = await nuvem({ acao: "aluno_entrar", codigo: cod.value }); const c = salvarConta({ codigo: cod.value.toUpperCase().trim(), nome: r.nome, turmas: r.turmas || [], prazo: r.prazo || 15 }); location.replace(pagina("?eu=" + c.id)); }
         catch (er) { AL.toast(er.rede ? "Sem internet agora. Para entrar a primeira vez precisa de internet." : er.message, true); botao.disabled = false; }
       } }, h("label", {}, "Código do aluno"), cod, botao)));
     if (!codigoInicial) cod.focus();
   }
-  function sair(msg) {
+  // ---------------------------------------------------------------- trava por falta de uso (23/11/2026, pedido do Rinaldo)
+  // A nuvem decide (com o relógio dela): mais de 15 dias sem entrar → bloqueado até o professor liberar (uma vez só);
+  // depois de liberado, mais de 7 dias sem entrar → bloqueado de vez e tudo deste acesso é apagado.
+  let travado = false;
+  function perdeuAcesso(e) {
+    if (e && e.trava === "pausa") { telaTravada(e.message); return; }
+    if (e && e.trava === "definitiva") { sair(e.message, true); return; }
+    sair("O seu código mudou ou foi desativado. Peça o código novo ao professor.");
+  }
+  function telaTravada(msg) {
+    if (travado) return;
+    travado = true;
+    try { FerramentasAL.parar(); } catch (er) { /* ok */ }
+    try { chatMostrar(false); } catch (er) { /* ok */ }
+    cab("Treino em casa", h("div", { style: { display: "flex", gap: ".4rem" } },
+      contas.length > 1 ? h("button", { onclick: () => location.href = pagina("?quem=1") }, "👥 Trocar") : null));
+    const tentar = h("button", { class: "primario bloco", style: { "margin-top": "1rem" }, onclick: async () => {
+      tentar.disabled = true;
+      try { await nuvem({ acao: "aluno_entrar", codigo: conta.codigo }); location.reload(); }
+      catch (er) { tentar.disabled = false; AL.toast(er.rede ? "Sem internet agora." : er.trava === "pausa" ? "Ainda bloqueado. Fale com o professor para liberar." : er.message, true); if (er.trava === "definitiva") sair(er.message, true); }
+    } }, "🔄 Já falei com o professor: tentar de novo");
+    AL.limpar(app, h("div", { class: "cartao entrar", style: { "border-left": "4px solid #e5534b" } },
+      h("h2", {}, "🔒 Acesso bloqueado" + (conta ? " — " + conta.nome.split(" ")[0] : "")),
+      h("p", { style: { "font-size": "1.1rem" } }, msg ||"Seu acesso ao treino em casa está bloqueado por falta de uso. Fale com o professor."),
+      h("p", { class: "mudo" }, "Atenção: o professor só pode liberar uma vez. Depois de liberado, se você ficar mais de 7 dias sem entrar, o acesso é bloqueado de vez e os seus treinos e resultados do treino em casa são apagados."),
+      filaEl, tentar));
+  }
+  function sair(msg, encerrado) {
     if (!msg && !confirm("Tirar " + (conta ? conta.nome : "esta pessoa") + " deste aparelho? As notas dela que ainda não foram enviadas serão perdidas.")) return;
+    if (encerrado) { travado = true; try { FerramentasAL.parar(); } catch (er) { /* ok */ } }
     try { PESSOAIS.forEach((k) => localStorage.removeItem(chave(k))); localStorage.removeItem("al_casa_conta"); } catch (e) { /* ok */ }
     if (conta) { contas = contas.filter((x) => x.codigo !== conta.codigo); gravarG("al_casa_contas", contas); }
     if (contas.length) { if (msg) alert(msg); location.replace(pagina(contas.length > 1 ? "?quem=1" : "?eu=" + contas[0].id)); return; }
@@ -441,9 +471,9 @@
     AL.limpar(app,
       h("div", { class: "cartao" }, h("h2", {}, "Olá, " + conta.nome.split(" ")[0] + "! 👋"),
         h("p", { class: "mudo" }, "Escolha um treino. No fim de cada um, a nota vai sozinha para o professor. Use fone de ouvido nos treinos de voz e de ouvido."),
-        seguidosEl, instado(), filaEl),
+        seguidosEl, instado(), filaEl, prazoEl),
       tarefaEl, chatAvisoEl, avisoCert, recupEl, barra, corpoTreino, corpoBoletim, corpoNotas, corpoChat);
-    trocar("treino"); mostrarFila(); enviarFila(); atualizarResumo();
+    trocar("treino"); mostrarFila(); mostrarPrazo(); enviarFila(); atualizarResumo();
     // durante a aula o boletim muda: confere a cada minuto enquanto o app está aberto
     setInterval(() => { if (!document.hidden && conta) atualizarResumo(); }, 60000);
     buscarTarefas(); setInterval(buscarTarefas, 5000);
@@ -460,7 +490,7 @@
     cab("Treino em casa");
     AL.limpar(app, h("p", { class: "mudo" }, "Entrando…"));
     nuvem({ acao: "aluno_entrar", codigo: codigoLink })
-      .then((r) => { const c = salvarConta({ codigo: codigoLink, nome: r.nome, turmas: r.turmas || [] }); location.replace(pagina("?eu=" + c.id)); })
+      .then((r) => { const c = salvarConta({ codigo: codigoLink, nome: r.nome, turmas: r.turmas || [], prazo: r.prazo || 15 }); location.replace(pagina("?eu=" + c.id)); })
       .catch((e) => telaEntrar(e.rede ? "Sem internet agora. Conecte e tente de novo." : e.message, codigoLink));
     return;
   }
